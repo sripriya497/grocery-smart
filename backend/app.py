@@ -1,9 +1,8 @@
 from flask import Flask, request, jsonify
-import pandas as pd
 import os
 from flask_cors import CORS # type: ignore
-import psycopg2 # type: ignore
-import urllib.parse as up
+import mysql.connector
+from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 from supabase import create_client
@@ -13,11 +12,15 @@ import logging
 import traceback
 import requests
 from math import radians, sin, cos, sqrt, atan2
+from auth import auth
+
 logging.basicConfig(level=logging.DEBUG)
 
 load_dotenv()
 
 app = Flask(__name__)
+app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY", "your_jwt_secret_key")
+jwt = JWTManager(app)
 
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, allow_headers=["Content-Type"])
 
@@ -29,29 +32,15 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
-# PostgreSQL connection
-
-DB_CONFIG = os.getenv("DATABASE_URL")  # Use environment variable
-print("DB Config:", DB_CONFIG)
-
 def get_db_connection():
-    if not DB_CONFIG:
-        print("ERROR: DATABASE_URL is not set!")
-        return None
-
-    print("Connecting to DB:", DB_CONFIG)  # Debugging: Check if the function runs
 
     try:
-        up.uses_netloc.append("postgres")
-        url = up.urlparse(DB_CONFIG)
-
-        conn = psycopg2.connect(
-            database=url.path[1:],
-            user=url.username,
-            password=url.password,
-            host=url.hostname,
-            port=url.port,
-            sslmode="require"
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            database=os.getenv("DB_NAME"),
+            port=int(os.getenv("DB_PORT", 3306))
         )
         print("Successfully connected to the database!")
         return conn
@@ -59,10 +48,8 @@ def get_db_connection():
         print(f"Database connection failed: {e}")
         return None
 
-# Initialize Supabase
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+app.register_blueprint(auth)
+
 
 #  Get list of all stores
 @app.route('/stores', methods=['GET'])
